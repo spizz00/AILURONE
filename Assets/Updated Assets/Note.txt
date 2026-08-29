@@ -1,0 +1,13 @@
+1. Base_Platform
+2. Block
+3. Circle_Floating_Platform
+4. Cube_Block
+5. Cutoff_Cube
+6. Square_Floating_Platform
+7. Ramp 
+8. Ball_Tower
+9. Tower_01
+
+Assets 1 to 6 (Base_Platform, Block, Circle_Floating_Platform, Cube_Block, Cutoff_Cube, Square_Floating_Platform) all share the same texture (Color Atlas). Just drag any one of them into Unity first and hit Extract Textures in the inspector and the rest will auto assign their textures when you drag them later. Also set the filter mode to Point (no filter) for the Color Atlas.
+
+Assets 7 to 9 (Ramp, Ball_Tower, Tower_01) have their own texture maps. Drag them in, click Extract Textures, then click Select Folder to get the textures.

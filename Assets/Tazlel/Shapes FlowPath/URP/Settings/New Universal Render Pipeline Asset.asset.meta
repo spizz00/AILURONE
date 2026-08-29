@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 0e0ad5945409cd445ac8708710005865
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 367232
+  packageName: Shapes FlowPath
+  packageVersion: 1.0
+  assetPath: Assets/Tazlel/Shapes FlowPath/URP/Settings/New Universal Render Pipeline
+    Asset.asset
+  uploadId: 922316

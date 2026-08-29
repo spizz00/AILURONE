@@ -1,0 +1,106 @@
+#pragma warning disable 0618
+#pragma warning disable 0414
+using UnityEngine;
+using System;
+
+[RequireComponent(typeof(Collider))]
+[DisallowMultipleComponent]
+public class EnemyContactDamage : MonoBehaviour
+{
+    [Header("接触伤害")]
+    public float damage = 45f;
+
+    [Tooltip("玩家持续接触敌人时，两次伤害之间的间隔。")]
+    public float damageCooldown = 1f;
+
+    [SerializeField]
+    private bool damageEnabled = true;
+
+    [SerializeField]
+    [Tooltip("由通用硬直 / 击退系统临时抑制，不改变 AI 自己记录的伤害开关。")]
+    private bool externalControlSuppressed;
+
+    private float _nextDamageTime;
+
+    public event Action<GameObject> PlayerDamaged;
+
+    public bool DamageEnabled =>
+        damageEnabled && !externalControlSuppressed;
+
+    private void Awake()
+    {
+        Collider damageCollider = GetComponent<Collider>();
+
+        if (damageCollider != null && !damageCollider.isTrigger)
+        {
+            Debug.LogWarning(
+                $"⚠️ [EnemyContactDamage] {gameObject.name} 的 Collider " +
+                "没有勾选 Is Trigger，现已自动开启。"
+            );
+
+            damageCollider.isTrigger = true;
+        }
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        TryDamagePlayer(other);
+    }
+
+    private void OnTriggerStay(Collider other)
+    {
+        TryDamagePlayer(other);
+    }
+
+    private void TryDamagePlayer(Collider other)
+    {
+        if (!DamageEnabled)
+        {
+            return;
+        }
+
+        if (Time.time < _nextDamageTime)
+        {
+            return;
+        }
+
+        PlayerHealth playerHealth =
+            other.GetComponentInParent<PlayerHealth>();
+
+        if (playerHealth == null)
+        {
+            return;
+        }
+
+        _nextDamageTime =
+            Time.time + Mathf.Max(0.05f, damageCooldown);
+
+        playerHealth.TakeDamage(damage);
+
+        PlayerDamaged?.Invoke(playerHealth.gameObject);
+
+        Debug.Log(
+            $"⚠️ [EnemyContactDamage] 玩家受到 {damage} 点接触伤害。"
+        );
+    }
+
+    public void SetDamageEnabled(bool enabled)
+    {
+        damageEnabled = enabled;
+
+        if (!enabled)
+        {
+            _nextDamageTime = 0f;
+        }
+    }
+
+    public void SetExternalControlSuppressed(bool suppressed)
+    {
+        externalControlSuppressed = suppressed;
+
+        if (suppressed)
+        {
+            _nextDamageTime = 0f;
+        }
+    }
+}

@@ -1,0 +1,193 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &3434993706778857670
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1659860487386217}
+  m_Layer: 0
+  m_Name: ExitDirectionTarget
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1659860487386217
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3434993706778857670}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 10.89, z: -0.43}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 5031844628684307657}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &5550642239075297956
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5001219488753798947}
+  m_Layer: 0
+  m_Name: GravityLiftZone_System
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5001219488753798947
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5550642239075297956}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -16.9109, y: 1.81528, z: -3.0179}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 5031844628684307657}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &7865423723916691390
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 5031844628684307657}
+  - component: {fileID: 8687653626305218474}
+  - component: {fileID: 5123526069692997326}
+  - component: {fileID: 7501692656611439815}
+  m_Layer: 0
+  m_Name: GravityLiftZone_RightRoute
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &5031844628684307657
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7865423723916691390}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: -50.779102, y: -1.4852799, z: -18.372099}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 1659860487386217}
+  m_Father: {fileID: 5001219488753798947}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &8687653626305218474
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7865423723916691390}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 5, y: 12, z: 5}
+  m_Center: {x: 0, y: 4, z: 0}
+--- !u!114 &5123526069692997326
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7865423723916691390}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3162250296325054db9b018034bec8d1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GravityLiftZone
+  liftEnabled: 1
+  targetUpSpeed: 9.5
+  liftAcceleration: 28
+  liftGravityMultiplier: 0.12
+  liftKeepAliveTime: 0.12
+  useTopSlowdown: 1
+  topSlowdownStart: 0.68
+  topTargetUpSpeed: 2.2
+  useExitBoost: 1
+  exitBoostHeightThreshold: 0.82
+  exitForwardBoost: 8
+  exitUpBoost: 4.5
+  exitNoDragDuration: 0.35
+  exitGraceTime: 0.18
+  exitBoostCooldown: 0.5
+  useCenterPull: 0
+  centerPullStrength: 5
+  centerStopDistance: 0.6
+  maxCenterPullSpeed: 8
+  useFOV: 1
+  liftFOV: 100
+  liftFOVSpeed: 10
+  forceTrigger: 1
+  autoSetIgnoreRaycastLayer: 1
+  autoHideOwnMeshRenderer: 1
+  drawGizmos: 1
+  showDebugLine: 1
+--- !u!114 &7501692656611439815
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7865423723916691390}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9fb322909854ac846804341e926df3c5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::GravityLiftVisual
+  liftZone: {fileID: 5123526069692997326}
+  liftBox: {fileID: 8687653626305218474}
+  showFlowLines: 1
+  lineCount: 14
+  lineWidth: 0.04
+  lineHeightOffset: 0.15
+  scrollSpeed: 2.5
+  idleLineColor: {r: 0.1, g: 0.8, b: 1, a: 0.65}
+  activeLineColor: {r: 0.35, g: 1, b: 1, a: 1}
+  showTopRing: 1
+  ringSegments: 96
+  topRingWidth: 0.055
+  topRingColor: {r: 0, g: 1, b: 0.85, a: 1}
+  ringPulseSpeed: 4
+  ringPulseAmount: 0.12
+  showExitArrow: 1
+  arrowLength: 2.2
+  arrowWidth: 0.08
+  arrowColor: {r: 0.4, g: 1, b: 0.25, a: 1}
+  activeRadiusCheckPadding: 0.15
+  activeLineWidthMultiplier: 1.6

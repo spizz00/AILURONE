@@ -1,0 +1,97 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1525611724036832155
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 3237626515372754964}
+  - component: {fileID: 651511636591329016}
+  m_Layer: 0
+  m_Name: FX_SpikeDeath_Weapon
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &3237626515372754964
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1525611724036832155}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &651511636591329016
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1525611724036832155}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2ce632988a918ee469bb2ff34e415288, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SpikeDeathFX
+  deathStyle: 0
+  detachFromParentOnSpawn: 1
+  weaponPresentationDelay: 0.07
+  environmentPresentationDelay: 0
+  weaponVisualScaleMultiplier: 0.45
+  environmentVisualScaleMultiplier: 1
+  weaponDensityMultiplier: 0.45
+  environmentDensityMultiplier: 1
+  shardMaterial: {fileID: 2100000, guid: 6e4fed1685b71554a92fbeede7995e80, type: 2}
+  additiveMaterial: {fileID: 2100000, guid: f84a509461de62843b824d0b08429e53, type: 2}
+  weaponPrimaryColor: {r: 0.05, g: 0.65, b: 1, a: 1}
+  weaponSecondaryColor: {r: 1, g: 0, b: 1, a: 1}
+  environmentPrimaryColor: {r: 1, g: 0, b: 0.55, a: 1}
+  environmentSecondaryColor: {r: 0.3, g: 0.02, b: 0.65, a: 1}
+  weaponShardCount: 22
+  environmentShardCount: 16
+  weaponShardSpeed: 7
+  environmentShardSpeed: 5
+  weaponDirectionalBias: 0.4
+  weaponUpwardBias: 0.25
+  environmentUpwardBias: 0.8
+  weaponGravityMultiplier: 0.65
+  environmentGravityMultiplier: 1
+  shardLifetimeMinimum: 0.75
+  shardLifetimeMaximum: 1.35
+  shardSizeMinimum: 0.12
+  shardSizeMaximum: 0.32
+  shardEmissionIntensity: 5
+  ringSegments: 48
+  ringLifetime: 0.48
+  ringStartScale: 0.25
+  ringEndScale: 2.6
+  ringStartWidth: 0.18
+  ringEndWidth: 0.025
+  ringBaseRadius: 1.7
+  flashLifetime: 0.18
+  flashStartScale: 0.25
+  flashEndScale: 2.5
+  flashIntensity: 4
+  weaponGlitchSliceCount: 9
+  environmentGlitchSliceCount: 6
+  glitchLifetimeMinimum: 0.22
+  glitchLifetimeMaximum: 0.48
+  glitchMoveSpeedMinimum: 2
+  glitchMoveSpeedMaximum: 5
+  glitchIntensity: 3
+  effectLifetime: 1.6
+  audioSource: {fileID: 0}
+  weaponDeathSound: {fileID: 0}
+  environmentDeathSound: {fileID: 0}
+  soundVolume: 1

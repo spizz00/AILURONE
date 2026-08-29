@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 34bdd33866f7d7d4d92500be44e4be37
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 367232
+  packageName: Shapes FlowPath
+  packageVersion: 1.0
+  assetPath: Assets/Tazlel/Shapes FlowPath/Animations/Camera.playable
+  uploadId: 922316

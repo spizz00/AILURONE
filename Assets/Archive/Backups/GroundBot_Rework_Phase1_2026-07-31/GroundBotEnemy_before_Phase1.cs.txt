@@ -1,0 +1,1971 @@
+using UnityEngine;
+
+[DisallowMultipleComponent]
+public class GroundBotEnemy : MonoBehaviour
+{
+    public enum GroundBotState
+    {
+        Idle,
+        Alert,
+        Approach,
+        Holding,
+        Retreat,
+        Suspended,
+        Aim,
+        BurstFire,
+        Cooldown
+    }
+
+    [Header("核心引用")]
+    public CombatPlatform combatPlatform;
+    public EnemyTarget enemyTarget;
+    public EnemyContactDamage contactDamage;
+    public Rigidbody enemyRigidbody;
+
+    [Tooltip("只负责模型视觉。不要拖最外层 GroundBot。")]
+    public Transform visualRoot;
+
+    [Tooltip("红色炮口内部的瞄准参考点。")]
+    public Transform aimPoint;
+
+    [Tooltip("红色炮口外侧的子弹生成点。当前移动阶段暂未使用。")]
+    public Transform muzzlePoint;
+
+    [Tooltip("机器人前方、底部附近的地面检测点。")]
+    public Transform groundCheckFront;
+
+    [Tooltip("机器人后方、底部附近的地面检测点。")]
+    public Transform groundCheckBack;
+
+    [Header("感知与启动")]
+    [Tooltip(
+        "绑定 CombatPlatform 后，玩家进入平台才激活。" +
+        "没有绑定平台时，改用 Detection Range。"
+    )]
+    [Min(0.1f)]
+    public float detectionRange = 18f;
+
+    [Tooltip("首次发现玩家后，开始移动前的短暂反应时间。")]
+    [Min(0f)]
+    public float alertDuration = 0.35f;
+
+    [Header("保持距离")]
+    [Tooltip("距离大于该值时，Ground Bot 开始接近玩家。")]
+    [Min(0.1f)]
+    public float approachStartDistance = 12.5f;
+
+    [Tooltip("接近到该距离后停止移动。")]
+    [Min(0.1f)]
+    public float approachStopDistance = 10.5f;
+
+    [Tooltip("距离小于该值时，Ground Bot 开始后退。")]
+    [Min(0.1f)]
+    public float retreatStartDistance = 6f;
+
+    [Tooltip("后退到该距离后停止移动。")]
+    [Min(0.1f)]
+    public float retreatStopDistance = 7.5f;
+
+    [Header("移动")]
+    [Min(0f)]
+    public float approachSpeed = 2.3f;
+
+    [Min(0f)]
+    public float retreatSpeed = 1.8f;
+
+    [Tooltip("每秒最多旋转角度。")]
+    [Min(0f)]
+    public float turnSpeed = 260f;
+
+    [Header("平台边缘保护")]
+    public LayerMask groundMask;
+
+    [Tooltip("从前后检测点向下检测地面的距离。")]
+    [Min(0.05f)]
+    public float groundCheckDistance = 0.65f;
+
+    [Tooltip("判断下一步是否仍位于 CombatArea 内的前瞻距离。")]
+    [Min(0.05f)]
+    public float boundaryLookAheadDistance = 0.55f;
+
+    [Header("墙体保护")]
+    public LayerMask obstacleMask;
+
+    [Tooltip("用于检测前方墙体的小球半径。")]
+    [Min(0.01f)]
+    public float obstacleProbeRadius = 0.18f;
+
+    [Tooltip("从机身外侧继续检测墙体的距离。")]
+    [Min(0.01f)]
+    public float obstacleProbeDistance = 0.35f;
+
+    [Tooltip("墙体检测点相对根对象的高度。")]
+    public float obstacleProbeHeight = 0.45f;
+
+    [Tooltip("墙体检测起点沿移动方向移出机身的距离。")]
+    [Min(0f)]
+    public float obstacleProbeStartOffset = 0.46f;
+
+    [Header("射击与可见弹丸")]
+    [Tooltip("由安装器创建的 PF_GroundBotProjectile。")]
+    public GroundBotProjectile projectilePrefab;
+
+    [Min(1)]
+    public int projectilePoolSize = 8;
+
+    [Tooltip("只有玩家在该距离内且无遮挡时才开始瞄准。")]
+    [Min(0.1f)]
+    public float maximumFireDistance = 14f;
+
+    [Tooltip("开火前的可读预警时间。")]
+    [Min(0f)]
+    public float aimDuration = 0.4f;
+
+    [Min(1)]
+    public int burstShotCount = 3;
+
+    [Min(0.01f)]
+    public float burstShotInterval = 0.18f;
+
+    [Min(0f)]
+    public float burstCooldown = 1.25f;
+
+    [Min(0f)]
+    public float projectileSpeed = 20f;
+
+    [Min(0f)]
+    public float projectileDamage = 15f;
+
+    [Min(0.05f)]
+    public float projectileLifeTime = 4f;
+
+    [Tooltip("无法取得玩家 CharacterController 时使用的胸口高度补偿。")]
+    public float playerAimHeightOffset = 1f;
+
+    [Tooltip("视线检测使用的小球半径。")]
+    [Min(0f)]
+    public float lineOfSightRadius = 0.035f;
+
+    [Header("瞄准预警发光")]
+    [Tooltip("通常自动绑定 VisualRoot 下所有 Renderer。")]
+    public Renderer[] warningRenderers;
+
+    [Min(1f)]
+    public float aimEmissionMultiplier = 3.2f;
+
+    [Min(1f)]
+    public float shotEmissionMultiplier = 5f;
+
+    [Min(0.01f)]
+    public float warningResponseSpeed = 10f;
+
+    [Min(0.01f)]
+    public float shotEmissionFlashDuration = 0.08f;
+
+    [Header("开火反馈")]
+    [Tooltip("每发弹丸生成一次的小型枪口闪光。")]
+    public GroundBotCombatFX muzzleFlashPrefab;
+
+    [Tooltip("建议放在 Ground Bot 根对象上的 3D AudioSource。")]
+    public AudioSource shotAudioSource;
+
+    [Tooltip("可替换为正式枪声。留空时可使用脚本生成的占位机械脉冲音。")]
+    public AudioClip shotAudioClip;
+
+    [Range(0f, 1f)]
+    public float shotVolume = 0.55f;
+
+    [Tooltip("每发轻微随机音高，避免三连发完全机械重复。")]
+    public Vector2 shotPitchRange =
+        new Vector2(0.96f, 1.04f);
+
+    [Tooltip("Shot Audio Clip 为空时，自动生成一个短促的占位枪声。")]
+    public bool generateFallbackShotSound = true;
+
+    [Header("运行状态")]
+    [SerializeField]
+    private GroundBotState currentState = GroundBotState.Idle;
+
+    [SerializeField]
+    private Transform currentPlayer;
+
+    [SerializeField]
+    private bool movementBlocked;
+
+    [SerializeField]
+    private bool hasLineOfSight;
+
+    [SerializeField]
+    private int shotsRemaining;
+
+    public GroundBotState CurrentState => currentState;
+    public Transform CurrentPlayer => currentPlayer;
+    public Vector3 CurrentMoveDirection => _currentMoveDirection;
+
+    private PlayerHealth _playerHealth;
+    private Vector3 _currentMoveDirection;
+    private float _stateTimer;
+    private float _nextPlayerSearchTime;
+    private bool _rewindSuspended;
+    private float _nextShotTime;
+    private float _shotEmissionTimer;
+    private float _currentEmissionMultiplier = 1f;
+    private bool _missingProjectileWarningLogged;
+    private CharacterController _playerCharacterController;
+    private static AudioClip _sharedFallbackShotClip;
+
+    private Transform _projectilePoolRoot;
+    private readonly System.Collections.Generic.Queue<GroundBotProjectile>
+        _availableProjectiles = new System.Collections.Generic.Queue<GroundBotProjectile>();
+    private readonly System.Collections.Generic.List<GroundBotProjectile>
+        _ownedProjectiles = new System.Collections.Generic.List<GroundBotProjectile>();
+
+    private MaterialPropertyBlock _warningPropertyBlock;
+    private Color[] _baseEmissionColors;
+
+    private readonly RaycastHit[] _obstacleHits =
+        new RaycastHit[12];
+
+    private readonly RaycastHit[] _lineOfSightHits =
+        new RaycastHit[12];
+
+    private void Awake()
+    {
+        AutoAssignReferences();
+        PrepareShotAudioSource();
+
+        if (enemyRigidbody != null)
+        {
+            enemyRigidbody.useGravity = false;
+            enemyRigidbody.isKinematic = true;
+            enemyRigidbody.interpolation =
+                RigidbodyInterpolation.Interpolate;
+            enemyRigidbody.collisionDetectionMode =
+                CollisionDetectionMode.ContinuousSpeculative;
+
+            enemyRigidbody.constraints =
+                RigidbodyConstraints.FreezePositionY |
+                RigidbodyConstraints.FreezeRotationX |
+                RigidbodyConstraints.FreezeRotationZ;
+        }
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(true);
+        }
+
+        CacheWarningVisuals();
+        BuildProjectilePool();
+    }
+
+    private void Start()
+    {
+        RefreshPlayerReference(true);
+        BindPlayerHealth();
+        EnterIdle();
+
+        ValidateRuntimeSetup();
+    }
+
+    private void Update()
+    {
+        UpdateWarningVisual();
+
+        if (enemyTarget != null && enemyTarget.IsDead)
+        {
+            return;
+        }
+
+        RefreshPlayerReference(false);
+        BindPlayerHealth();
+
+        if (_rewindSuspended ||
+            (_playerHealth != null && _playerHealth.IsRewinding))
+        {
+            EnterSuspended();
+            return;
+        }
+
+        if (!CanEngagePlayer())
+        {
+            EnterIdle();
+            return;
+        }
+
+        switch (currentState)
+        {
+            case GroundBotState.Idle:
+                EnterAlert();
+                break;
+
+            case GroundBotState.Alert:
+                _stateTimer -= Time.deltaTime;
+
+                if (_stateTimer <= 0f)
+                {
+                    ChooseStateFromDistance();
+                }
+                break;
+
+            case GroundBotState.Approach:
+                if (GetFlatDistanceToPlayer() <=
+                    approachStopDistance)
+                {
+                    EnterHolding();
+                }
+                break;
+
+            case GroundBotState.Holding:
+                UpdateHoldingState();
+                break;
+
+            case GroundBotState.Retreat:
+                if (GetFlatDistanceToPlayer() >=
+                    retreatStopDistance)
+                {
+                    EnterHolding();
+                }
+                break;
+
+            case GroundBotState.Suspended:
+                ChooseStateFromDistance();
+                break;
+
+            case GroundBotState.Aim:
+                UpdateAimState();
+                break;
+
+            case GroundBotState.BurstFire:
+                UpdateBurstFireState();
+                break;
+
+            case GroundBotState.Cooldown:
+                UpdateCooldownState();
+                break;
+        }
+    }
+
+    private void FixedUpdate()
+    {
+        _currentMoveDirection = Vector3.zero;
+        movementBlocked = false;
+
+        if (enemyTarget != null && enemyTarget.IsDead)
+        {
+            return;
+        }
+
+        if (_rewindSuspended ||
+            currentState == GroundBotState.Idle ||
+            currentState == GroundBotState.Suspended ||
+            currentPlayer == null ||
+            !CanEngagePlayer())
+        {
+            return;
+        }
+
+        Vector3 directionToPlayer =
+            GetFlatDirectionToPlayer();
+
+        RotateTowardDirection(directionToPlayer);
+
+        switch (currentState)
+        {
+            case GroundBotState.Approach:
+                TryMove(
+                    directionToPlayer,
+                    approachSpeed
+                );
+                break;
+
+            case GroundBotState.Retreat:
+                TryMove(
+                    -directionToPlayer,
+                    retreatSpeed
+                );
+                break;
+        }
+    }
+
+    private void OnDisable()
+    {
+        DespawnAllOwnedProjectiles();
+        RestoreWarningVisuals();
+        UnbindPlayerHealth();
+        _currentMoveDirection = Vector3.zero;
+    }
+
+    private void OnDestroy()
+    {
+        DestroyAllOwnedProjectiles();
+        RestoreWarningVisuals();
+        UnbindPlayerHealth();
+    }
+
+    // =========================================================
+    // 状态
+    // =========================================================
+
+    private void EnterIdle()
+    {
+        if (currentState == GroundBotState.Idle)
+        {
+            _currentMoveDirection = Vector3.zero;
+            return;
+        }
+
+        currentState = GroundBotState.Idle;
+        ResetAttackRuntime();
+        _stateTimer = 0f;
+        _currentMoveDirection = Vector3.zero;
+    }
+
+    private void EnterAlert()
+    {
+        currentState = GroundBotState.Alert;
+        ResetAttackRuntime();
+        _stateTimer = Mathf.Max(0f, alertDuration);
+        _currentMoveDirection = Vector3.zero;
+    }
+
+    private void EnterApproach()
+    {
+        currentState = GroundBotState.Approach;
+        ResetAttackRuntime();
+    }
+
+    private void EnterHolding()
+    {
+        currentState = GroundBotState.Holding;
+        ResetAttackRuntime();
+        _currentMoveDirection = Vector3.zero;
+    }
+
+    private void EnterRetreat()
+    {
+        currentState = GroundBotState.Retreat;
+        ResetAttackRuntime();
+    }
+
+    private void EnterSuspended()
+    {
+        currentState = GroundBotState.Suspended;
+        ResetAttackRuntime();
+        _currentMoveDirection = Vector3.zero;
+        movementBlocked = false;
+        hasLineOfSight = false;
+    }
+
+    private void EnterAim()
+    {
+        currentState = GroundBotState.Aim;
+        shotsRemaining = 0;
+        _stateTimer = Mathf.Max(0f, aimDuration);
+        _currentMoveDirection = Vector3.zero;
+    }
+
+    private void EnterBurstFire()
+    {
+        currentState = GroundBotState.BurstFire;
+        shotsRemaining = Mathf.Max(1, burstShotCount);
+        _nextShotTime = Time.time;
+        _currentMoveDirection = Vector3.zero;
+    }
+
+    private void EnterCooldown()
+    {
+        currentState = GroundBotState.Cooldown;
+        shotsRemaining = 0;
+        _stateTimer = Mathf.Max(0f, burstCooldown);
+        _currentMoveDirection = Vector3.zero;
+    }
+
+    private void UpdateHoldingState()
+    {
+        float distance = GetFlatDistanceToPlayer();
+
+        if (distance > approachStartDistance)
+        {
+            EnterApproach();
+            return;
+        }
+
+        if (distance < retreatStartDistance)
+        {
+            EnterRetreat();
+            return;
+        }
+
+        if (CanBeginAttack())
+        {
+            EnterAim();
+        }
+    }
+
+    private void ChooseStateFromDistance()
+    {
+        float distance = GetFlatDistanceToPlayer();
+
+        if (distance > approachStartDistance)
+        {
+            EnterApproach();
+            return;
+        }
+
+        if (distance < retreatStartDistance)
+        {
+            EnterRetreat();
+            return;
+        }
+
+        EnterHolding();
+    }
+
+    // =========================================================
+    // 射击状态与弹丸池
+    // =========================================================
+
+    private void UpdateAimState()
+    {
+        if (TryHandleDistanceTransition())
+        {
+            return;
+        }
+
+        hasLineOfSight = HasLineOfSightToPlayer();
+
+        if (!hasLineOfSight || projectilePrefab == null)
+        {
+            EnterHolding();
+            return;
+        }
+
+        _stateTimer -= Time.deltaTime;
+
+        if (_stateTimer <= 0f)
+        {
+            EnterBurstFire();
+        }
+    }
+
+    private void UpdateBurstFireState()
+    {
+        if (TryHandleDistanceTransition())
+        {
+            return;
+        }
+
+        if (shotsRemaining <= 0)
+        {
+            EnterCooldown();
+            return;
+        }
+
+        if (Time.time < _nextShotTime)
+        {
+            return;
+        }
+
+        hasLineOfSight = HasLineOfSightToPlayer();
+
+        if (!hasLineOfSight)
+        {
+            EnterHolding();
+            return;
+        }
+
+        if (!FireProjectile())
+        {
+            EnterHolding();
+            return;
+        }
+
+        shotsRemaining--;
+
+        if (shotsRemaining <= 0)
+        {
+            EnterCooldown();
+            return;
+        }
+
+        _nextShotTime =
+            Time.time + Mathf.Max(0.01f, burstShotInterval);
+    }
+
+    private void UpdateCooldownState()
+    {
+        if (TryHandleDistanceTransition())
+        {
+            return;
+        }
+
+        _stateTimer -= Time.deltaTime;
+
+        if (_stateTimer <= 0f)
+        {
+            EnterHolding();
+        }
+    }
+
+    private bool TryHandleDistanceTransition()
+    {
+        float distance = GetFlatDistanceToPlayer();
+
+        if (distance > approachStartDistance)
+        {
+            EnterApproach();
+            return true;
+        }
+
+        if (distance < retreatStartDistance)
+        {
+            EnterRetreat();
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool CanBeginAttack()
+    {
+        if (projectilePrefab == null ||
+            currentPlayer == null)
+        {
+            hasLineOfSight = false;
+            return false;
+        }
+
+        if (GetFlatDistanceToPlayer() > maximumFireDistance)
+        {
+            hasLineOfSight = false;
+            return false;
+        }
+
+        hasLineOfSight = HasLineOfSightToPlayer();
+        return hasLineOfSight;
+    }
+
+    private bool HasLineOfSightToPlayer()
+    {
+        if (currentPlayer == null)
+        {
+            return false;
+        }
+
+        Vector3 origin =
+            aimPoint != null
+                ? aimPoint.position
+                : GetCurrentPosition() + Vector3.up * 0.55f;
+
+        Vector3 target = GetPlayerAimPosition();
+        Vector3 delta = target - origin;
+        float distance = delta.magnitude;
+
+        if (distance <= 0.001f)
+        {
+            return true;
+        }
+
+        if (obstacleMask.value == 0)
+        {
+            return true;
+        }
+
+        Vector3 direction = delta / distance;
+
+        int hitCount = Physics.SphereCastNonAlloc(
+            origin,
+            Mathf.Max(0f, lineOfSightRadius),
+            direction,
+            _lineOfSightHits,
+            Mathf.Max(0f, distance - 0.05f),
+            obstacleMask,
+            QueryTriggerInteraction.Ignore
+        );
+
+        for (int index = 0; index < hitCount; index++)
+        {
+            Collider hitCollider =
+                _lineOfSightHits[index].collider;
+
+            if (hitCollider == null)
+            {
+                continue;
+            }
+
+            Transform hitTransform = hitCollider.transform;
+
+            if (hitTransform == transform ||
+                hitTransform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private Vector3 GetPlayerAimPosition()
+    {
+        if (_playerCharacterController != null &&
+            _playerCharacterController.enabled)
+        {
+            return _playerCharacterController.bounds.center;
+        }
+
+        if (currentPlayer == null)
+        {
+            return GetCurrentPosition();
+        }
+
+        return currentPlayer.position +
+               Vector3.up * playerAimHeightOffset;
+    }
+
+    private bool FireProjectile()
+    {
+        if (projectilePrefab == null ||
+            muzzlePoint == null ||
+            currentPlayer == null)
+        {
+            if (!_missingProjectileWarningLogged)
+            {
+                _missingProjectileWarningLogged = true;
+                Debug.LogWarning(
+                    "[GroundBotEnemy] Projectile Prefab、Muzzle Point " +
+                    "或玩家引用缺失，无法开火。",
+                    this
+                );
+            }
+
+            return false;
+        }
+
+        GroundBotProjectile projectile = AcquireProjectile();
+
+        if (projectile == null)
+        {
+            return false;
+        }
+
+        Vector3 origin = muzzlePoint.position;
+        Vector3 direction = GetPlayerAimPosition() - origin;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+        {
+            direction = transform.forward;
+        }
+
+        direction.Normalize();
+
+        projectile.Launch(
+            origin,
+            direction,
+            projectileSpeed,
+            projectileDamage,
+            projectileLifeTime,
+            transform,
+            ReturnProjectileToPool
+        );
+
+        SpawnMuzzleFlash(origin, direction);
+        PlayShotAudio();
+
+        _shotEmissionTimer =
+            Mathf.Max(0.01f, shotEmissionFlashDuration);
+
+        return true;
+    }
+
+    private void SpawnMuzzleFlash(
+        Vector3 position,
+        Vector3 direction
+    )
+    {
+        if (muzzleFlashPrefab == null)
+        {
+            return;
+        }
+
+        if (direction.sqrMagnitude <= 0.0001f)
+        {
+            direction = transform.forward;
+        }
+
+        Instantiate(
+            muzzleFlashPrefab,
+            position,
+            Quaternion.LookRotation(
+                direction.normalized,
+                Vector3.up
+            )
+        );
+    }
+
+    private void PrepareShotAudioSource()
+    {
+        if (shotAudioSource == null)
+        {
+            shotAudioSource =
+                GetComponent<AudioSource>();
+        }
+
+        if (shotAudioSource == null)
+        {
+            shotAudioSource =
+                gameObject.AddComponent<AudioSource>();
+        }
+
+        shotAudioSource.playOnAwake = false;
+        shotAudioSource.loop = false;
+        shotAudioSource.spatialBlend = 1f;
+        shotAudioSource.dopplerLevel = 0f;
+        shotAudioSource.rolloffMode =
+            AudioRolloffMode.Linear;
+        shotAudioSource.minDistance = 2f;
+        shotAudioSource.maxDistance = 22f;
+    }
+
+    private void PlayShotAudio()
+    {
+        if (shotAudioSource == null)
+        {
+            return;
+        }
+
+        AudioClip clip = shotAudioClip;
+
+        if (clip == null &&
+            generateFallbackShotSound)
+        {
+            clip = GetOrCreateFallbackShotClip();
+        }
+
+        if (clip == null ||
+            shotVolume <= 0f)
+        {
+            return;
+        }
+
+        float minimumPitch =
+            Mathf.Min(
+                shotPitchRange.x,
+                shotPitchRange.y
+            );
+
+        float maximumPitch =
+            Mathf.Max(
+                shotPitchRange.x,
+                shotPitchRange.y
+            );
+
+        shotAudioSource.pitch =
+            Random.Range(
+                minimumPitch,
+                maximumPitch
+            );
+
+        shotAudioSource.PlayOneShot(
+            clip,
+            Mathf.Clamp01(shotVolume)
+        );
+    }
+
+    private static AudioClip
+        GetOrCreateFallbackShotClip()
+    {
+        if (_sharedFallbackShotClip != null)
+        {
+            return _sharedFallbackShotClip;
+        }
+
+        const int sampleRate = 44100;
+        const float duration = 0.13f;
+
+        int sampleCount =
+            Mathf.CeilToInt(
+                sampleRate * duration
+            );
+
+        float[] samples =
+            new float[sampleCount];
+
+        int noiseState = 0x13579B;
+
+        for (int index = 0;
+             index < sampleCount;
+             index++)
+        {
+            float time =
+                (float)index / sampleRate;
+
+            float normalizedTime =
+                Mathf.Clamp01(time / duration);
+
+            float attack =
+                Mathf.Clamp01(
+                    normalizedTime / 0.025f
+                );
+
+            float decay =
+                Mathf.Exp(
+                    -normalizedTime * 6.8f
+                );
+
+            float envelope =
+                attack *
+                decay *
+                (1f - normalizedTime);
+
+            float lowFrequency =
+                Mathf.Lerp(
+                    300f,
+                    145f,
+                    normalizedTime
+                );
+
+            float highFrequency =
+                Mathf.Lerp(
+                    980f,
+                    420f,
+                    normalizedTime
+                );
+
+            float lowTone =
+                Mathf.Sin(
+                    Mathf.PI *
+                    2f *
+                    lowFrequency *
+                    time
+                );
+
+            float highTone =
+                Mathf.Sin(
+                    Mathf.PI *
+                    2f *
+                    highFrequency *
+                    time
+                );
+
+            unchecked
+            {
+                noiseState =
+                    noiseState *
+                    1103515245 +
+                    12345;
+            }
+
+            float noise =
+                (((noiseState >> 16) & 0x7FFF)
+                 / 16383f) *
+                2f -
+                1f;
+
+            float sample =
+                lowTone * 0.58f +
+                highTone * 0.22f +
+                noise * 0.20f;
+
+            samples[index] =
+                Mathf.Clamp(
+                    sample * envelope * 0.82f,
+                    -1f,
+                    1f
+                );
+        }
+
+        _sharedFallbackShotClip =
+            AudioClip.Create(
+                "GroundBot_Shot_Fallback",
+                sampleCount,
+                1,
+                sampleRate,
+                false
+            );
+
+        _sharedFallbackShotClip.SetData(
+            samples,
+            0
+        );
+
+        return _sharedFallbackShotClip;
+    }
+
+    private void BuildProjectilePool()
+    {
+        if (projectilePrefab == null ||
+            _projectilePoolRoot != null)
+        {
+            return;
+        }
+
+        GameObject poolObject =
+            new GameObject("ProjectilePool_Runtime");
+
+        _projectilePoolRoot = poolObject.transform;
+        _projectilePoolRoot.SetParent(transform, false);
+
+        int count = Mathf.Max(1, projectilePoolSize);
+
+        for (int index = 0; index < count; index++)
+        {
+            GroundBotProjectile projectile =
+                CreatePooledProjectile();
+
+            if (projectile != null)
+            {
+                _availableProjectiles.Enqueue(projectile);
+            }
+        }
+    }
+
+    private GroundBotProjectile CreatePooledProjectile()
+    {
+        if (projectilePrefab == null)
+        {
+            return null;
+        }
+
+        if (_projectilePoolRoot == null)
+        {
+            GameObject poolObject =
+                new GameObject("ProjectilePool_Runtime");
+
+            _projectilePoolRoot = poolObject.transform;
+            _projectilePoolRoot.SetParent(transform, false);
+        }
+
+        GroundBotProjectile projectile = Instantiate(
+            projectilePrefab,
+            _projectilePoolRoot
+        );
+
+        projectile.name =
+            projectilePrefab.name + "_Pooled";
+
+        projectile.gameObject.SetActive(false);
+        _ownedProjectiles.Add(projectile);
+        return projectile;
+    }
+
+    private GroundBotProjectile AcquireProjectile()
+    {
+        while (_availableProjectiles.Count > 0)
+        {
+            GroundBotProjectile projectile =
+                _availableProjectiles.Dequeue();
+
+            if (projectile != null)
+            {
+                return projectile;
+            }
+        }
+
+        return CreatePooledProjectile();
+    }
+
+    private void ReturnProjectileToPool(
+        GroundBotProjectile projectile
+    )
+    {
+        if (projectile == null)
+        {
+            return;
+        }
+
+        if (_projectilePoolRoot != null)
+        {
+            projectile.transform.SetParent(
+                _projectilePoolRoot,
+                false
+            );
+        }
+
+        _availableProjectiles.Enqueue(projectile);
+    }
+
+    private void DespawnAllOwnedProjectiles()
+    {
+        for (int index = 0;
+             index < _ownedProjectiles.Count;
+             index++)
+        {
+            GroundBotProjectile projectile =
+                _ownedProjectiles[index];
+
+            if (projectile != null &&
+                projectile.gameObject.activeSelf)
+            {
+                projectile.Despawn();
+            }
+        }
+    }
+
+    private void DestroyAllOwnedProjectiles()
+    {
+        for (int index = 0;
+             index < _ownedProjectiles.Count;
+             index++)
+        {
+            GroundBotProjectile projectile =
+                _ownedProjectiles[index];
+
+            if (projectile != null)
+            {
+                projectile.DestroyWithOwner();
+            }
+        }
+
+        _ownedProjectiles.Clear();
+        _availableProjectiles.Clear();
+    }
+
+    private void ResetAttackRuntime()
+    {
+        shotsRemaining = 0;
+        _nextShotTime = 0f;
+        hasLineOfSight = false;
+    }
+
+    // =========================================================
+    // 瞄准预警发光
+    // =========================================================
+
+    private void CacheWarningVisuals()
+    {
+        if ((warningRenderers == null ||
+             warningRenderers.Length == 0) &&
+            visualRoot != null)
+        {
+            warningRenderers =
+                visualRoot.GetComponentsInChildren<Renderer>(true);
+        }
+
+        if (warningRenderers == null)
+        {
+            warningRenderers = new Renderer[0];
+        }
+
+        _warningPropertyBlock = new MaterialPropertyBlock();
+        _baseEmissionColors =
+            new Color[warningRenderers.Length];
+
+        for (int index = 0;
+             index < warningRenderers.Length;
+             index++)
+        {
+            Renderer targetRenderer = warningRenderers[index];
+            Color emissionColor = Color.white;
+
+            if (targetRenderer != null &&
+                targetRenderer.sharedMaterial != null &&
+                targetRenderer.sharedMaterial.HasProperty(
+                    "_EmissionColor"
+                ))
+            {
+                emissionColor =
+                    targetRenderer.sharedMaterial.GetColor(
+                        "_EmissionColor"
+                    );
+            }
+
+            _baseEmissionColors[index] = emissionColor;
+        }
+    }
+
+    private void UpdateWarningVisual()
+    {
+        if (_warningPropertyBlock == null ||
+            warningRenderers == null ||
+            _baseEmissionColors == null)
+        {
+            return;
+        }
+
+        if (_shotEmissionTimer > 0f)
+        {
+            _shotEmissionTimer -= Time.deltaTime;
+        }
+
+        float targetMultiplier = 1f;
+
+        if (_shotEmissionTimer > 0f)
+        {
+            targetMultiplier = shotEmissionMultiplier;
+        }
+        else if (currentState == GroundBotState.Aim)
+        {
+            float progress = aimDuration > 0.001f
+                ? 1f - Mathf.Clamp01(_stateTimer / aimDuration)
+                : 1f;
+
+            targetMultiplier = Mathf.Lerp(
+                1f,
+                aimEmissionMultiplier,
+                progress
+            );
+        }
+        else if (currentState == GroundBotState.BurstFire)
+        {
+            targetMultiplier = aimEmissionMultiplier;
+        }
+
+        _currentEmissionMultiplier = Mathf.MoveTowards(
+            _currentEmissionMultiplier,
+            Mathf.Max(1f, targetMultiplier),
+            warningResponseSpeed * Time.deltaTime
+        );
+
+        ApplyWarningEmission(_currentEmissionMultiplier);
+    }
+
+    private void ApplyWarningEmission(float multiplier)
+    {
+        int count = Mathf.Min(
+            warningRenderers.Length,
+            _baseEmissionColors.Length
+        );
+
+        for (int index = 0; index < count; index++)
+        {
+            Renderer targetRenderer = warningRenderers[index];
+
+            if (targetRenderer == null)
+            {
+                continue;
+            }
+
+            targetRenderer.GetPropertyBlock(
+                _warningPropertyBlock
+            );
+
+            _warningPropertyBlock.SetColor(
+                "_EmissionColor",
+                _baseEmissionColors[index] * multiplier
+            );
+
+            targetRenderer.SetPropertyBlock(
+                _warningPropertyBlock
+            );
+        }
+    }
+
+    private void RestoreWarningVisuals()
+    {
+        _currentEmissionMultiplier = 1f;
+
+        if (_warningPropertyBlock != null &&
+            warningRenderers != null &&
+            _baseEmissionColors != null)
+        {
+            ApplyWarningEmission(1f);
+        }
+    }
+
+    // =========================================================
+    // 玩家与回溯
+    // =========================================================
+
+    private bool CanEngagePlayer()
+    {
+        if (currentPlayer == null)
+        {
+            return false;
+        }
+
+        if (_playerHealth != null &&
+            _playerHealth.IsRewinding)
+        {
+            return false;
+        }
+
+        if (combatPlatform != null)
+        {
+            return combatPlatform.IsPlayerInside;
+        }
+
+        return
+            GetFlatDistanceToPlayer() <=
+            detectionRange;
+    }
+
+    private void RefreshPlayerReference(
+        bool forceSearch
+    )
+    {
+        if (combatPlatform != null &&
+            combatPlatform.Player != null)
+        {
+            currentPlayer = combatPlatform.Player;
+            return;
+        }
+
+        if (!forceSearch &&
+            currentPlayer != null)
+        {
+            return;
+        }
+
+        if (!forceSearch &&
+            Time.time < _nextPlayerSearchTime)
+        {
+            return;
+        }
+
+        _nextPlayerSearchTime = Time.time + 0.5f;
+
+        GameObject playerObject =
+            GameObject.FindGameObjectWithTag("Player");
+
+        currentPlayer =
+            playerObject != null
+                ? playerObject.transform
+                : null;
+    }
+
+    private void BindPlayerHealth()
+    {
+        PlayerHealth resolvedHealth = null;
+
+        if (currentPlayer != null)
+        {
+            resolvedHealth =
+                currentPlayer.GetComponentInParent<PlayerHealth>();
+        }
+
+        if (resolvedHealth == null)
+        {
+            resolvedHealth = PlayerHealth.Instance;
+        }
+
+        if (resolvedHealth == _playerHealth)
+        {
+            return;
+        }
+
+        UnbindPlayerHealth();
+        _playerHealth = resolvedHealth;
+
+        _playerCharacterController =
+            _playerHealth != null
+                ? _playerHealth.GetComponent<CharacterController>()
+                : null;
+
+        if (_playerHealth == null)
+        {
+            return;
+        }
+
+        _playerHealth.RewindStarted +=
+            HandleRewindStarted;
+
+        _playerHealth.RewindCompleted +=
+            HandleRewindCompleted;
+    }
+
+    private void UnbindPlayerHealth()
+    {
+        if (_playerHealth == null)
+        {
+            return;
+        }
+
+        _playerHealth.RewindStarted -=
+            HandleRewindStarted;
+
+        _playerHealth.RewindCompleted -=
+            HandleRewindCompleted;
+
+        _playerHealth = null;
+        _playerCharacterController = null;
+    }
+
+    private void HandleRewindStarted()
+    {
+        _rewindSuspended = true;
+        EnterSuspended();
+        DespawnAllOwnedProjectiles();
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(false);
+        }
+    }
+
+    private void HandleRewindCompleted()
+    {
+        _rewindSuspended = false;
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(true);
+        }
+
+        RefreshPlayerReference(true);
+
+        if (CanEngagePlayer())
+        {
+            EnterAlert();
+        }
+        else
+        {
+            EnterIdle();
+        }
+    }
+
+    // =========================================================
+    // 转向与移动
+    // =========================================================
+
+    private void TryMove(
+        Vector3 direction,
+        float speed
+    )
+    {
+        if (direction.sqrMagnitude <= 0.0001f ||
+            speed <= 0f)
+        {
+            return;
+        }
+
+        direction.y = 0f;
+        direction.Normalize();
+
+        if (!CanMoveInDirection(direction))
+        {
+            movementBlocked = true;
+            return;
+        }
+
+        _currentMoveDirection = direction;
+
+        Vector3 currentPosition =
+            GetCurrentPosition();
+
+        Vector3 targetPosition =
+            currentPosition +
+            direction *
+            speed *
+            Time.fixedDeltaTime;
+
+        targetPosition.y = currentPosition.y;
+
+        if (enemyRigidbody != null &&
+            enemyRigidbody.isKinematic)
+        {
+            enemyRigidbody.MovePosition(targetPosition);
+        }
+        else
+        {
+            transform.position = targetPosition;
+        }
+    }
+
+    private void RotateTowardDirection(
+        Vector3 direction
+    )
+    {
+        if (direction.sqrMagnitude <= 0.0001f ||
+            turnSpeed <= 0f)
+        {
+            return;
+        }
+
+        direction.y = 0f;
+        direction.Normalize();
+
+        Quaternion targetRotation =
+            Quaternion.LookRotation(
+                direction,
+                Vector3.up
+            );
+
+        Quaternion newRotation =
+            Quaternion.RotateTowards(
+                GetCurrentRotation(),
+                targetRotation,
+                turnSpeed * Time.fixedDeltaTime
+            );
+
+        if (enemyRigidbody != null &&
+            enemyRigidbody.isKinematic)
+        {
+            enemyRigidbody.MoveRotation(newRotation);
+        }
+        else
+        {
+            transform.rotation = newRotation;
+        }
+    }
+
+    private bool CanMoveInDirection(
+        Vector3 direction
+    )
+    {
+        Vector3 currentPosition =
+            GetCurrentPosition();
+
+        Vector3 boundaryTestPoint =
+            currentPosition +
+            direction *
+            boundaryLookAheadDistance;
+
+        if (combatPlatform != null &&
+            !combatPlatform.ContainsWorldPoint(
+                boundaryTestPoint
+            ))
+        {
+            return false;
+        }
+
+        Transform selectedGroundCheck =
+            Vector3.Dot(
+                direction,
+                transform.forward
+            ) >= 0f
+                ? groundCheckFront
+                : groundCheckBack;
+
+        if (!HasGroundBelow(selectedGroundCheck))
+        {
+            return false;
+        }
+
+        if (HasObstacleAhead(direction))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool HasGroundBelow(
+        Transform groundCheck
+    )
+    {
+        if (groundCheck == null)
+        {
+            return false;
+        }
+
+        Vector3 origin =
+            groundCheck.position +
+            Vector3.up * 0.08f;
+
+        int mask =
+            groundMask.value != 0
+                ? groundMask.value
+                : Physics.DefaultRaycastLayers;
+
+        return Physics.Raycast(
+            origin,
+            Vector3.down,
+            groundCheckDistance,
+            mask,
+            QueryTriggerInteraction.Ignore
+        );
+    }
+
+    private bool HasObstacleAhead(
+        Vector3 direction
+    )
+    {
+        if (obstacleMask.value == 0)
+        {
+            return false;
+        }
+
+        Vector3 origin =
+            GetCurrentPosition() +
+            Vector3.up * obstacleProbeHeight +
+            direction * obstacleProbeStartOffset;
+
+        int hitCount =
+            Physics.SphereCastNonAlloc(
+                origin,
+                obstacleProbeRadius,
+                direction,
+                _obstacleHits,
+                obstacleProbeDistance,
+                obstacleMask,
+                QueryTriggerInteraction.Ignore
+            );
+
+        for (int index = 0;
+             index < hitCount;
+             index++)
+        {
+            Collider hitCollider =
+                _obstacleHits[index].collider;
+
+            if (hitCollider == null)
+            {
+                continue;
+            }
+
+            Transform hitTransform =
+                hitCollider.transform;
+
+            if (hitTransform == transform ||
+                hitTransform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private Vector3 GetFlatDirectionToPlayer()
+    {
+        if (currentPlayer == null)
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 direction =
+            currentPlayer.position -
+            GetCurrentPosition();
+
+        direction.y = 0f;
+
+        return direction.sqrMagnitude > 0.0001f
+            ? direction.normalized
+            : Vector3.zero;
+    }
+
+    private float GetFlatDistanceToPlayer()
+    {
+        if (currentPlayer == null)
+        {
+            return float.PositiveInfinity;
+        }
+
+        Vector3 difference =
+            currentPlayer.position -
+            GetCurrentPosition();
+
+        difference.y = 0f;
+
+        return difference.magnitude;
+    }
+
+    private Vector3 GetCurrentPosition()
+    {
+        return enemyRigidbody != null
+            ? enemyRigidbody.position
+            : transform.position;
+    }
+
+    private Quaternion GetCurrentRotation()
+    {
+        return enemyRigidbody != null
+            ? enemyRigidbody.rotation
+            : transform.rotation;
+    }
+
+    // =========================================================
+    // 自动引用与验证
+    // =========================================================
+
+    [ContextMenu("Auto Assign Ground Bot References")]
+    private void AutoAssignReferences()
+    {
+        if (combatPlatform == null)
+        {
+            combatPlatform =
+                GetComponentInParent<CombatPlatform>();
+        }
+
+        if (enemyTarget == null)
+        {
+            enemyTarget = GetComponent<EnemyTarget>();
+        }
+
+        if (contactDamage == null)
+        {
+            contactDamage =
+                GetComponentInChildren<EnemyContactDamage>(true);
+        }
+
+        if (enemyRigidbody == null)
+        {
+            enemyRigidbody = GetComponent<Rigidbody>();
+        }
+
+        if (shotAudioSource == null)
+        {
+            shotAudioSource =
+                GetComponent<AudioSource>();
+        }
+
+        if (visualRoot == null)
+        {
+            visualRoot = transform.Find("VisualRoot");
+        }
+
+        if (aimPoint == null)
+        {
+            aimPoint = transform.Find("AimPoint");
+        }
+
+        if (muzzlePoint == null)
+        {
+            muzzlePoint = transform.Find("MuzzlePoint");
+        }
+
+        if (groundCheckFront == null)
+        {
+            groundCheckFront =
+                transform.Find(
+                    "GroundCheck/GroundCheckFront"
+                );
+        }
+
+        if (groundCheckBack == null)
+        {
+            groundCheckBack =
+                transform.Find(
+                    "GroundCheck/GroundCheckBack"
+                );
+        }
+
+        if ((warningRenderers == null ||
+             warningRenderers.Length == 0) &&
+            visualRoot != null)
+        {
+            warningRenderers =
+                visualRoot.GetComponentsInChildren<Renderer>(true);
+        }
+    }
+
+    private void ValidateRuntimeSetup()
+    {
+        if (enemyRigidbody == null)
+        {
+            Debug.LogError(
+                "[GroundBotEnemy] GroundBot 根对象缺少 Rigidbody。",
+                this
+            );
+        }
+
+        if (enemyTarget == null)
+        {
+            Debug.LogError(
+                "[GroundBotEnemy] GroundBot 根对象缺少 EnemyTarget。",
+                this
+            );
+        }
+
+        if (groundCheckFront == null ||
+            groundCheckBack == null)
+        {
+            Debug.LogError(
+                "[GroundBotEnemy] 缺少 GroundCheckFront 或 GroundCheckBack。",
+                this
+            );
+        }
+
+        if (muzzlePoint == null)
+        {
+            Debug.LogError(
+                "[GroundBotEnemy] 缺少 MuzzlePoint。",
+                this
+            );
+        }
+
+        if (projectilePrefab == null)
+        {
+            Debug.LogWarning(
+                "[GroundBotEnemy] Projectile Prefab 尚未绑定，" +
+                "Ground Bot 只会移动，不会开火。",
+                this
+            );
+        }
+    }
+
+#if UNITY_EDITOR
+    private void OnValidate()
+    {
+        detectionRange = Mathf.Max(0.1f, detectionRange);
+        alertDuration = Mathf.Max(0f, alertDuration);
+
+        approachStartDistance =
+            Mathf.Max(0.1f, approachStartDistance);
+
+        approachStopDistance =
+            Mathf.Clamp(
+                approachStopDistance,
+                0.1f,
+                approachStartDistance
+            );
+
+        retreatStartDistance =
+            Mathf.Clamp(
+                retreatStartDistance,
+                0.1f,
+                approachStopDistance
+            );
+
+        retreatStopDistance =
+            Mathf.Clamp(
+                retreatStopDistance,
+                retreatStartDistance,
+                approachStopDistance
+            );
+
+        approachSpeed = Mathf.Max(0f, approachSpeed);
+        retreatSpeed = Mathf.Max(0f, retreatSpeed);
+        turnSpeed = Mathf.Max(0f, turnSpeed);
+
+        groundCheckDistance =
+            Mathf.Max(0.05f, groundCheckDistance);
+
+        boundaryLookAheadDistance =
+            Mathf.Max(0.05f, boundaryLookAheadDistance);
+
+        obstacleProbeRadius =
+            Mathf.Max(0.01f, obstacleProbeRadius);
+
+        obstacleProbeDistance =
+            Mathf.Max(0.01f, obstacleProbeDistance);
+
+        obstacleProbeStartOffset =
+            Mathf.Max(0f, obstacleProbeStartOffset);
+
+        projectilePoolSize = Mathf.Max(1, projectilePoolSize);
+        maximumFireDistance =
+            Mathf.Max(0.1f, maximumFireDistance);
+        aimDuration = Mathf.Max(0f, aimDuration);
+        burstShotCount = Mathf.Max(1, burstShotCount);
+        burstShotInterval =
+            Mathf.Max(0.01f, burstShotInterval);
+        burstCooldown = Mathf.Max(0f, burstCooldown);
+        projectileSpeed = Mathf.Max(0f, projectileSpeed);
+        projectileDamage = Mathf.Max(0f, projectileDamage);
+        projectileLifeTime =
+            Mathf.Max(0.05f, projectileLifeTime);
+        lineOfSightRadius =
+            Mathf.Max(0f, lineOfSightRadius);
+        aimEmissionMultiplier =
+            Mathf.Max(1f, aimEmissionMultiplier);
+        shotEmissionMultiplier =
+            Mathf.Max(1f, shotEmissionMultiplier);
+        warningResponseSpeed =
+            Mathf.Max(0.01f, warningResponseSpeed);
+        shotEmissionFlashDuration =
+            Mathf.Max(0.01f, shotEmissionFlashDuration);
+
+        shotVolume = Mathf.Clamp01(shotVolume);
+
+        shotPitchRange.x =
+            Mathf.Clamp(
+                shotPitchRange.x,
+                0.1f,
+                3f
+            );
+
+        shotPitchRange.y =
+            Mathf.Clamp(
+                shotPitchRange.y,
+                0.1f,
+                3f
+            );
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        Vector3 center = transform.position;
+
+        Gizmos.color = new Color(0.2f, 0.9f, 1f, 0.75f);
+        DrawFlatCircle(center, detectionRange);
+
+        Gizmos.color = new Color(1f, 0.75f, 0.15f, 0.8f);
+        DrawFlatCircle(center, approachStartDistance);
+
+        Gizmos.color = new Color(0.25f, 1f, 0.5f, 0.8f);
+        DrawFlatCircle(center, approachStopDistance);
+
+        Gizmos.color = new Color(1f, 0.35f, 0.25f, 0.8f);
+        DrawFlatCircle(center, retreatStartDistance);
+
+        DrawGroundRayGizmo(groundCheckFront, Color.green);
+        DrawGroundRayGizmo(groundCheckBack, Color.blue);
+
+        if (aimPoint != null && currentPlayer != null)
+        {
+            Gizmos.color = hasLineOfSight
+                ? Color.cyan
+                : Color.red;
+            Gizmos.DrawLine(
+                aimPoint.position,
+                GetPlayerAimPosition()
+            );
+        }
+    }
+
+    private void DrawGroundRayGizmo(
+        Transform groundCheck,
+        Color color
+    )
+    {
+        if (groundCheck == null)
+        {
+            return;
+        }
+
+        Gizmos.color = color;
+
+        Vector3 origin =
+            groundCheck.position +
+            Vector3.up * 0.08f;
+
+        Gizmos.DrawSphere(origin, 0.035f);
+        Gizmos.DrawLine(
+            origin,
+            origin +
+            Vector3.down * groundCheckDistance
+        );
+    }
+
+    private static void DrawFlatCircle(
+        Vector3 center,
+        float radius
+    )
+    {
+        const int segmentCount = 48;
+
+        Vector3 previousPoint =
+            center + Vector3.forward * radius;
+
+        for (int index = 1;
+             index <= segmentCount;
+             index++)
+        {
+            float angle =
+                index /
+                (float)segmentCount *
+                Mathf.PI * 2f;
+
+            Vector3 nextPoint =
+                center +
+                new Vector3(
+                    Mathf.Sin(angle) * radius,
+                    0f,
+                    Mathf.Cos(angle) * radius
+                );
+
+            Gizmos.DrawLine(
+                previousPoint,
+                nextPoint
+            );
+
+            previousPoint = nextPoint;
+        }
+    }
+#endif
+}

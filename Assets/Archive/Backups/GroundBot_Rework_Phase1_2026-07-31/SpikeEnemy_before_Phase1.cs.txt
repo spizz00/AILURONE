@@ -1,0 +1,1407 @@
+using UnityEngine;
+
+[DisallowMultipleComponent]
+public class SpikeEnemy : MonoBehaviour
+{
+    public enum SpikeState
+    {
+        Idle,
+        Tracking,
+        Windup,
+        Charging,
+        Recovering,
+        Stunned,
+        Falling
+    }
+
+    [Header("核心引用")]
+    public CombatPlatform combatPlatform;
+    public EnemyTarget enemyTarget;
+    public EnemyContactDamage contactDamage;
+    public Rigidbody spikeRigidbody;
+
+    [Tooltip("只负责模型视觉动画，不要拖 Enemy_Spike_Root。")]
+    public Transform visualRoot;
+
+    [Tooltip("放在敌人实体底部，用于检测地面。")]
+    public Transform groundProbe;
+
+    [Header("感知与追踪")]
+    [Tooltip(
+        "绑定 CombatPlatform 后，玩家进入该平台便持续追踪。" +
+        "没有绑定平台时才使用此范围。"
+    )]
+    public float detectionRange = 16f;
+
+    public float trackingSpeed = 4.5f;
+    public float trackingStopDistance = 6f;
+    public float turnSpeed = 360f;
+    public float attackCooldown = 1f;
+
+    [Header("追踪移动表现")]
+    [Range(0f, 0.8f)]
+    public float trackingWeaveStrength = 0.22f;
+
+    public float trackingWeaveFrequency = 2f;
+
+    [Header("冲锋距离")]
+    public float minimumChargeDistance = 3f;
+    public float maximumChargeDistance = 12f;
+
+    [Header("蓄力与冲锋")]
+    public float windupDuration = 0.55f;
+    public float chargeSpeed = 18f;
+    public float maximumChargeDuration = 2f;
+
+    [Tooltip(
+        "脚下没有地面后，经过多久进入 Falling。"
+    )]
+    public float edgeGraceDuration = 0.08f;
+
+    [Tooltip(
+        "冲锋离开所属 CombatArea 后，经过多久进入 Falling。"
+    )]
+    public float platformExitGraceDuration = 0.05f;
+
+    [Header("撞墙与恢复")]
+    public float wallCheckDistance = 1f;
+    public float wallCheckRadius = 1.35f;
+    public float recoverDuration = 0.9f;
+    public float stunDuration = 1.4f;
+
+    [Header("地面检测")]
+    public LayerMask groundMask;
+    public float groundCheckDistance = 0.7f;
+    public float edgeProbeForwardDistance = 1.5f;
+
+    public LayerMask wallMask;
+    public LayerMask obstacleMask;
+
+    [Header("坠落与撞击死亡")]
+    [Tooltip(
+        "没有碰到 KillZone 或其他地面时的保险死亡时间。"
+    )]
+    public float maximumFallLifetime = 4f;
+
+    [Tooltip(
+        "Falling 状态碰到这些 Layer 时立即环境死亡。" +
+        "通常选择 Environment。"
+    )]
+    public LayerMask fallImpactMask;
+
+    [Tooltip(
+        "进入 Falling 后，延迟多久才允许撞击死亡。" +
+        "防止刚离开原平台时误判。"
+    )]
+    public float fallImpactArmDelay = 0.15f;
+
+    [Tooltip(
+        "坠落时整个敌人的物理翻滚速度，单位为弧度每秒。"
+    )]
+    public float fallingAngularSpeed = 10f;
+
+    [Header("基础程序动画")]
+    public float idleSpinSpeed = 35f;
+    public float trackingSpinSpeed = 90f;
+    public float windupSpinSpeed = 300f;
+    public float chargeSpinSpeed = 720f;
+
+    public float hoverAmplitude = 0.08f;
+    public float hoverFrequency = 2.5f;
+    public float visualSmoothSpeed = 12f;
+
+    [Header("蓄力表现")]
+    public float windupBackPull = 0.3f;
+    public float windupShakeAmount = 0.07f;
+
+    [Range(0.5f, 1f)]
+    public float windupScale = 0.78f;
+
+    [Header("眩晕表现")]
+    public float stunnedWobbleAngle = 18f;
+    public float stunnedWobbleFrequency = 7f;
+
+    [Header("运行状态")]
+    [SerializeField]
+    private SpikeState currentState = SpikeState.Idle;
+public SpikeState CurrentState => currentState;
+
+public float WindupProgress
+{
+    get
+    {
+        if (currentState != SpikeState.Windup)
+        {
+            return 0f;
+        }
+
+        return 1f - Mathf.Clamp01(
+            _stateTimer / Mathf.Max(0.01f, windupDuration)
+        );
+    }
+}
+    private Transform _player;
+
+    private float _stateTimer;
+    private float _attackCooldownTimer;
+    private float _chargeTimer;
+
+    private float _noGroundTimer;
+    private float _outsidePlatformTimer;
+
+    private float _fallTimer;
+    private float _fallImpactTimer;
+
+    private Vector3 _chargeDirection;
+
+    private Vector3 _visualBasePosition;
+    private Vector3 _visualBaseScale;
+    private Quaternion _stunVisualBaseRotation;
+
+    private float _trackingWeaveSeed;
+    private bool _deathRequested;
+
+    private void Awake()
+    {
+        if (enemyTarget == null)
+        {
+            enemyTarget = GetComponent<EnemyTarget>();
+        }
+
+        if (spikeRigidbody == null)
+        {
+            spikeRigidbody = GetComponent<Rigidbody>();
+        }
+
+        if (contactDamage == null)
+        {
+            contactDamage =
+                GetComponentInChildren<EnemyContactDamage>();
+        }
+
+        if (combatPlatform == null)
+        {
+            combatPlatform =
+                GetComponentInParent<CombatPlatform>();
+        }
+
+        if (spikeRigidbody != null)
+        {
+            spikeRigidbody.isKinematic = true;
+            spikeRigidbody.useGravity = false;
+
+            spikeRigidbody.constraints =
+                RigidbodyConstraints.FreezeRotation;
+        }
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(false);
+
+            contactDamage.PlayerDamaged +=
+                HandlePlayerDamaged;
+        }
+
+        if (visualRoot != null)
+        {
+            _visualBasePosition =
+                visualRoot.localPosition;
+
+            _visualBaseScale =
+                visualRoot.localScale;
+
+            _stunVisualBaseRotation =
+                visualRoot.localRotation;
+        }
+
+        if (fallImpactMask.value == 0)
+        {
+            fallImpactMask =
+                (LayerMask)(
+                    groundMask.value |
+                    wallMask.value
+                );
+        }
+
+        _trackingWeaveSeed =
+            Random.Range(0f, 10f);
+    }
+
+    private void Start()
+    {
+        RefreshPlayerReference();
+        EnterIdle();
+    }
+
+    private void OnDestroy()
+    {
+        if (contactDamage != null)
+        {
+            contactDamage.PlayerDamaged -=
+                HandlePlayerDamaged;
+        }
+    }
+
+    private void Update()
+    {
+        RefreshPlayerReference();
+
+        if (_attackCooldownTimer > 0f)
+        {
+            _attackCooldownTimer -= Time.deltaTime;
+        }
+
+        switch (currentState)
+        {
+            case SpikeState.Idle:
+                UpdateIdleState();
+                break;
+
+            case SpikeState.Tracking:
+                UpdateTrackingState();
+                break;
+
+            case SpikeState.Windup:
+                UpdateWindupState();
+                break;
+
+            case SpikeState.Recovering:
+                UpdateRecoveringState();
+                break;
+
+            case SpikeState.Stunned:
+                UpdateStunnedState();
+                break;
+
+            case SpikeState.Falling:
+                UpdateFallingState();
+                break;
+        }
+
+        UpdateProceduralVisual();
+    }
+
+    private void FixedUpdate()
+    {
+        switch (currentState)
+        {
+            case SpikeState.Tracking:
+                HandleTrackingMovement();
+                break;
+
+            case SpikeState.Windup:
+                RotateTowardPlayer();
+                break;
+
+            case SpikeState.Charging:
+                HandleChargeMovement();
+                break;
+        }
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        TryHandleFallImpact(collision);
+    }
+
+    private void OnCollisionStay(Collision collision)
+    {
+        // 关键修复：
+        // 第一次碰撞若发生在 0.15 秒保护期内，
+        // 保护期结束后仍能通过 CollisionStay 触发死亡。
+        TryHandleFallImpact(collision);
+    }
+
+    private void TryHandleFallImpact(Collision collision)
+    {
+        if (currentState != SpikeState.Falling)
+        {
+            return;
+        }
+
+        if (_deathRequested)
+        {
+            return;
+        }
+
+        if (_fallImpactTimer < fallImpactArmDelay)
+        {
+            return;
+        }
+
+        if (collision == null ||
+            collision.collider == null)
+        {
+            return;
+        }
+
+        int collisionLayerBit =
+            1 << collision.collider.gameObject.layer;
+
+        bool validImpactLayer =
+            (fallImpactMask.value &
+             collisionLayerBit) != 0;
+
+        if (!validImpactLayer)
+        {
+            return;
+        }
+
+        KillFromEnvironment();
+    }
+
+    // =========================================================
+    // 状态更新
+    // =========================================================
+
+    private void UpdateIdleState()
+    {
+        if (CanEngagePlayer())
+        {
+            currentState = SpikeState.Tracking;
+        }
+    }
+
+    private void UpdateTrackingState()
+    {
+        if (!CanEngagePlayer())
+        {
+            EnterIdle();
+            return;
+        }
+
+        if (_attackCooldownTimer > 0f)
+        {
+            return;
+        }
+
+        float distanceToPlayer =
+            GetFlatDistanceToPlayer();
+
+        bool validChargeDistance =
+            distanceToPlayer >= minimumChargeDistance &&
+            distanceToPlayer <= maximumChargeDistance;
+
+        if (validChargeDistance &&
+            HasLineOfSightToPlayer())
+        {
+            BeginWindup();
+        }
+    }
+
+    private void UpdateWindupState()
+    {
+        _stateTimer -= Time.deltaTime;
+
+        if (_stateTimer <= 0f)
+        {
+            BeginCharge();
+        }
+    }
+
+    private void UpdateRecoveringState()
+    {
+        _stateTimer -= Time.deltaTime;
+
+        if (_stateTimer <= 0f)
+        {
+            if (CanEngagePlayer())
+            {
+                currentState = SpikeState.Tracking;
+            }
+            else
+            {
+                EnterIdle();
+            }
+        }
+    }
+
+    private void UpdateStunnedState()
+    {
+        _stateTimer -= Time.deltaTime;
+
+        if (_stateTimer <= 0f)
+        {
+            _attackCooldownTimer =
+                attackCooldown;
+
+            if (CanEngagePlayer())
+            {
+                currentState =
+                    SpikeState.Tracking;
+            }
+            else
+            {
+                EnterIdle();
+            }
+        }
+    }
+
+    private void UpdateFallingState()
+    {
+        _fallTimer += Time.deltaTime;
+        _fallImpactTimer += Time.deltaTime;
+
+        if (_fallTimer >= maximumFallLifetime)
+        {
+            KillFromEnvironment();
+        }
+    }
+
+    // =========================================================
+    // 追踪移动
+    // =========================================================
+
+    private void HandleTrackingMovement()
+    {
+        if (_player == null)
+        {
+            return;
+        }
+
+        Vector3 directDirection =
+            GetFlatDirectionToPlayer();
+
+        if (directDirection.sqrMagnitude <= 0.001f)
+        {
+            return;
+        }
+
+        RotateTowardDirection(directDirection);
+
+        float distanceToPlayer =
+            GetFlatDistanceToPlayer();
+
+        if (distanceToPlayer <= trackingStopDistance)
+        {
+            return;
+        }
+
+        Vector3 sideDirection =
+            Vector3.Cross(
+                Vector3.up,
+                directDirection
+            ).normalized;
+
+        float weave =
+            Mathf.Sin(
+                Time.time *
+                trackingWeaveFrequency +
+                _trackingWeaveSeed
+            ) * trackingWeaveStrength;
+
+        Vector3 movementDirection =
+            (
+                directDirection +
+                sideDirection * weave
+            ).normalized;
+
+        if (!HasGroundAhead(movementDirection))
+        {
+            movementDirection = directDirection;
+
+            if (!HasGroundAhead(movementDirection))
+            {
+                return;
+            }
+        }
+
+        Vector3 movement =
+            movementDirection *
+            trackingSpeed *
+            Time.fixedDeltaTime;
+
+        MoveControlled(
+            GetCurrentPosition() + movement
+        );
+    }
+
+    // =========================================================
+    // 冲锋移动
+    // =========================================================
+
+    private void HandleChargeMovement()
+    {
+        if (_chargeDirection.sqrMagnitude <= 0.001f)
+        {
+            EnterRecover();
+            return;
+        }
+
+        if (IsWallDirectlyAhead())
+        {
+            EnterStunned();
+            return;
+        }
+
+        RotateTowardDirection(_chargeDirection);
+
+        Vector3 movement =
+            _chargeDirection *
+            chargeSpeed *
+            Time.fixedDeltaTime;
+
+        MoveControlled(
+            GetCurrentPosition() + movement
+        );
+
+        _chargeTimer -= Time.fixedDeltaTime;
+
+        UpdateChargeBoundaryState();
+
+        if (currentState == SpikeState.Falling)
+        {
+            return;
+        }
+
+        if (_chargeTimer <= 0f)
+        {
+            EnterRecover();
+        }
+    }
+
+    private void UpdateChargeBoundaryState()
+    {
+        bool hasGround =
+            HasGroundBelow();
+
+        if (hasGround)
+        {
+            _noGroundTimer = 0f;
+        }
+        else
+        {
+            _noGroundTimer +=
+                Time.fixedDeltaTime;
+        }
+
+        bool outsideOwnPlatform = false;
+
+        if (combatPlatform != null)
+        {
+            outsideOwnPlatform =
+                !combatPlatform.ContainsWorldPoint(
+                    GetCurrentPosition()
+                );
+        }
+
+        if (outsideOwnPlatform)
+        {
+            _outsidePlatformTimer +=
+                Time.fixedDeltaTime;
+        }
+        else
+        {
+            _outsidePlatformTimer = 0f;
+        }
+
+        bool lostGroundLongEnough =
+            _noGroundTimer >= edgeGraceDuration;
+
+        bool leftPlatformLongEnough =
+            combatPlatform != null &&
+            _outsidePlatformTimer >=
+            platformExitGraceDuration;
+
+        if (lostGroundLongEnough ||
+            leftPlatformLongEnough)
+        {
+            EnterFalling();
+        }
+    }
+
+    // =========================================================
+    // 状态切换
+    // =========================================================
+
+    private void BeginWindup()
+    {
+        currentState = SpikeState.Windup;
+
+        _stateTimer =
+            Mathf.Max(
+                0.05f,
+                windupDuration
+            );
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(false);
+        }
+    }
+
+    private void BeginCharge()
+    {
+        Vector3 directionToPlayer =
+            GetFlatDirectionToPlayer();
+
+        if (directionToPlayer.sqrMagnitude <= 0.001f)
+        {
+            directionToPlayer =
+                transform.forward;
+
+            directionToPlayer.y = 0f;
+            directionToPlayer.Normalize();
+        }
+
+        _chargeDirection = directionToPlayer;
+
+        currentState = SpikeState.Charging;
+
+        _chargeTimer =
+            Mathf.Max(
+                0.1f,
+                maximumChargeDuration
+            );
+
+        _noGroundTimer = 0f;
+        _outsidePlatformTimer = 0f;
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(true);
+        }
+    }
+
+    private void EnterIdle()
+    {
+        currentState = SpikeState.Idle;
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(false);
+        }
+    }
+
+    private void EnterRecover()
+    {
+        currentState = SpikeState.Recovering;
+
+        _stateTimer =
+            Mathf.Max(
+                0.05f,
+                recoverDuration
+            );
+
+        _attackCooldownTimer =
+            attackCooldown;
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(false);
+        }
+    }
+
+    private void EnterStunned()
+    {
+        currentState = SpikeState.Stunned;
+
+        _stateTimer =
+            Mathf.Max(
+                0.05f,
+                stunDuration
+            );
+
+        _attackCooldownTimer =
+            attackCooldown;
+
+        if (visualRoot != null)
+        {
+            _stunVisualBaseRotation =
+                visualRoot.localRotation;
+        }
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(false);
+        }
+    }
+
+    private void EnterFalling()
+    {
+        if (currentState == SpikeState.Falling)
+        {
+            return;
+        }
+
+        currentState = SpikeState.Falling;
+
+        _fallTimer = 0f;
+        _fallImpactTimer = 0f;
+
+        if (contactDamage != null)
+        {
+            contactDamage.SetDamageEnabled(false);
+        }
+
+        if (spikeRigidbody != null)
+        {
+            spikeRigidbody.constraints =
+                RigidbodyConstraints.None;
+
+            spikeRigidbody.isKinematic = false;
+            spikeRigidbody.useGravity = true;
+
+            spikeRigidbody.linearVelocity =
+                _chargeDirection * chargeSpeed;
+
+            Vector3 rollingAxis =
+                Vector3.Cross(
+                    Vector3.up,
+                    _chargeDirection
+                ).normalized;
+
+            spikeRigidbody.angularVelocity =
+                rollingAxis *
+                fallingAngularSpeed;
+        }
+    }
+
+    private void HandlePlayerDamaged(
+        GameObject playerObject
+    )
+    {
+        if (currentState == SpikeState.Charging)
+        {
+            EnterRecover();
+        }
+    }
+
+    // =========================================================
+    // 感知
+    // =========================================================
+
+    private bool CanEngagePlayer()
+    {
+        if (_player == null)
+        {
+            return false;
+        }
+
+        if (combatPlatform != null)
+        {
+            return
+                combatPlatform.IsPlayerInside;
+        }
+
+        return
+            GetFlatDistanceToPlayer() <=
+            detectionRange;
+    }
+
+    private bool HasLineOfSightToPlayer()
+    {
+        if (_player == null)
+        {
+            return false;
+        }
+
+        Vector3 start =
+            transform.position +
+            Vector3.up * 0.5f;
+
+        Vector3 end =
+            _player.position +
+            Vector3.up * 0.8f;
+
+        return !Physics.Linecast(
+            start,
+            end,
+            obstacleMask,
+            QueryTriggerInteraction.Ignore
+        );
+    }
+
+    // =========================================================
+    // 地面与墙壁检测
+    // =========================================================
+
+    private bool HasGroundAhead(
+        Vector3 moveDirection
+    )
+    {
+        Transform probe =
+            groundProbe != null
+                ? groundProbe
+                : transform;
+
+        Vector3 origin =
+            probe.position +
+            moveDirection.normalized *
+            edgeProbeForwardDistance +
+            Vector3.up * 0.2f;
+
+        return Physics.Raycast(
+            origin,
+            Vector3.down,
+            groundCheckDistance,
+            groundMask,
+            QueryTriggerInteraction.Ignore
+        );
+    }
+
+    private bool HasGroundBelow()
+    {
+        Transform probe =
+            groundProbe != null
+                ? groundProbe
+                : transform;
+
+        Vector3 origin =
+            probe.position +
+            Vector3.up * 0.2f;
+
+        return Physics.Raycast(
+            origin,
+            Vector3.down,
+            groundCheckDistance,
+            groundMask,
+            QueryTriggerInteraction.Ignore
+        );
+    }
+
+    private bool IsWallDirectlyAhead()
+    {
+        Vector3 origin =
+            transform.position +
+            Vector3.up * 0.5f;
+
+        return Physics.SphereCast(
+            origin,
+            wallCheckRadius,
+            _chargeDirection,
+            out _,
+            wallCheckDistance,
+            wallMask,
+            QueryTriggerInteraction.Ignore
+        );
+    }
+
+    // =========================================================
+    // 转向与移动
+    // =========================================================
+
+    private void RotateTowardPlayer()
+    {
+        if (_player == null)
+        {
+            return;
+        }
+
+        RotateTowardDirection(
+            GetFlatDirectionToPlayer()
+        );
+    }
+
+    private void RotateTowardDirection(
+        Vector3 direction
+    )
+    {
+        if (direction.sqrMagnitude <= 0.001f)
+        {
+            return;
+        }
+
+        Quaternion targetRotation =
+            Quaternion.LookRotation(
+                direction.normalized,
+                Vector3.up
+            );
+
+        Quaternion newRotation =
+            Quaternion.RotateTowards(
+                GetCurrentRotation(),
+                targetRotation,
+                turnSpeed *
+                Time.fixedDeltaTime
+            );
+
+        if (spikeRigidbody != null &&
+            spikeRigidbody.isKinematic)
+        {
+            spikeRigidbody.MoveRotation(
+                newRotation
+            );
+        }
+        else
+        {
+            transform.rotation = newRotation;
+        }
+    }
+
+    private void MoveControlled(
+        Vector3 targetPosition
+    )
+    {
+        if (spikeRigidbody != null &&
+            spikeRigidbody.isKinematic)
+        {
+            spikeRigidbody.MovePosition(
+                targetPosition
+            );
+        }
+        else
+        {
+            transform.position =
+                targetPosition;
+        }
+    }
+
+    private Vector3 GetCurrentPosition()
+    {
+        return spikeRigidbody != null
+            ? spikeRigidbody.position
+            : transform.position;
+    }
+
+    private Quaternion GetCurrentRotation()
+    {
+        return spikeRigidbody != null
+            ? spikeRigidbody.rotation
+            : transform.rotation;
+    }
+
+    private Vector3 GetFlatDirectionToPlayer()
+    {
+        if (_player == null)
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 direction =
+            _player.position -
+            transform.position;
+
+        direction.y = 0f;
+
+        return direction.normalized;
+    }
+
+    private float GetFlatDistanceToPlayer()
+    {
+        if (_player == null)
+        {
+            return Mathf.Infinity;
+        }
+
+        Vector3 difference =
+            _player.position -
+            transform.position;
+
+        difference.y = 0f;
+
+        return difference.magnitude;
+    }
+
+    private void RefreshPlayerReference()
+    {
+        if (combatPlatform != null &&
+            combatPlatform.Player != null)
+        {
+            _player =
+                combatPlatform.Player;
+
+            return;
+        }
+
+        if (_player == null)
+        {
+            GameObject playerObject =
+                GameObject.FindGameObjectWithTag(
+                    "Player"
+                );
+
+            if (playerObject != null)
+            {
+                _player =
+                    playerObject.transform;
+            }
+        }
+    }
+
+    private void KillFromEnvironment()
+    {
+        if (_deathRequested)
+        {
+            return;
+        }
+
+        _deathRequested = true;
+
+        if (enemyTarget != null)
+        {
+            enemyTarget.DieFromEnvironment(
+                transform.position
+            );
+        }
+        else
+        {
+            Destroy(gameObject);
+        }
+    }
+
+    // =========================================================
+    // 程序动画
+    // =========================================================
+
+    private void UpdateProceduralVisual()
+    {
+        if (visualRoot == null)
+        {
+            return;
+        }
+
+        float deltaTime = Time.deltaTime;
+
+        float hoverOffset =
+            Mathf.Sin(
+                Time.time *
+                hoverFrequency
+            ) * hoverAmplitude;
+
+        Vector3 targetPosition =
+            _visualBasePosition +
+            Vector3.up * hoverOffset;
+
+        Vector3 targetScale =
+            _visualBaseScale;
+
+        switch (currentState)
+        {
+            case SpikeState.Idle:
+            {
+                Vector3 idleAxis =
+                    new Vector3(
+                        0.35f,
+                        1f,
+                        0.2f
+                    ).normalized;
+
+                visualRoot.Rotate(
+                    idleAxis,
+                    idleSpinSpeed *
+                    deltaTime,
+                    Space.Self
+                );
+
+                break;
+            }
+
+            case SpikeState.Tracking:
+            {
+                Vector3 trackingAxis =
+                    new Vector3(
+                        0.55f,
+                        1f,
+                        0.3f
+                    ).normalized;
+
+                visualRoot.Rotate(
+                    trackingAxis,
+                    trackingSpinSpeed *
+                    deltaTime,
+                    Space.Self
+                );
+
+                float sideMovement =
+                    Mathf.Sin(
+                        Time.time *
+                        trackingWeaveFrequency +
+                        _trackingWeaveSeed
+                    ) * 0.05f;
+
+                targetPosition +=
+                    Vector3.right *
+                    sideMovement;
+
+                float trackingPulse =
+                    1f +
+                    Mathf.Sin(Time.time * 6f) *
+                    0.025f;
+
+                targetScale =
+                    _visualBaseScale *
+                    trackingPulse;
+
+                break;
+            }
+
+            case SpikeState.Windup:
+            {
+                Vector3 windupAxis =
+                    new Vector3(
+                        0.7f,
+                        0.35f,
+                        1f
+                    ).normalized;
+
+                visualRoot.Rotate(
+                    windupAxis,
+                    windupSpinSpeed *
+                    deltaTime,
+                    Space.Self
+                );
+
+                float progress =
+                    1f -
+                    Mathf.Clamp01(
+                        _stateTimer /
+                        Mathf.Max(
+                            0.01f,
+                            windupDuration
+                        )
+                    );
+
+                targetPosition +=
+                    Vector3.back *
+                    windupBackPull *
+                    progress;
+
+                Vector3 shake =
+                    new Vector3(
+                        Mathf.Sin(
+                            Time.time * 43f
+                        ),
+                        Mathf.Cos(
+                            Time.time * 51f
+                        ),
+                        Mathf.Sin(
+                            Time.time * 59f
+                        )
+                    ) *
+                    windupShakeAmount *
+                    progress;
+
+                targetPosition += shake;
+
+                float scaleValue =
+                    Mathf.Lerp(
+                        1f,
+                        windupScale,
+                        progress
+                    );
+
+                float pulse =
+                    1f +
+                    Mathf.Sin(
+                        Time.time * 28f
+                    ) * 0.035f;
+
+                targetScale =
+                    _visualBaseScale *
+                    scaleValue *
+                    pulse;
+
+                break;
+            }
+
+            case SpikeState.Charging:
+            {
+                Vector3 rollAxis =
+                    Vector3.Cross(
+                        Vector3.up,
+                        _chargeDirection
+                    ).normalized;
+
+                if (rollAxis.sqrMagnitude >
+                    0.001f)
+                {
+                    visualRoot.Rotate(
+                        rollAxis,
+                        chargeSpinSpeed *
+                        deltaTime,
+                        Space.World
+                    );
+                }
+
+                targetScale =
+                    Vector3.Scale(
+                        _visualBaseScale,
+                        new Vector3(
+                            0.9f,
+                            0.9f,
+                            1.22f
+                        )
+                    );
+
+                targetPosition =
+                    _visualBasePosition;
+
+                break;
+            }
+
+            case SpikeState.Recovering:
+            {
+                Vector3 recoverAxis =
+                    new Vector3(
+                        0.4f,
+                        1f,
+                        0.4f
+                    ).normalized;
+
+                visualRoot.Rotate(
+                    recoverAxis,
+                    trackingSpinSpeed *
+                    0.35f *
+                    deltaTime,
+                    Space.Self
+                );
+
+                float recoverProgress =
+                    1f -
+                    Mathf.Clamp01(
+                        _stateTimer /
+                        Mathf.Max(
+                            0.01f,
+                            recoverDuration
+                        )
+                    );
+
+                float bounce =
+                    Mathf.Sin(
+                        recoverProgress *
+                        Mathf.PI
+                    ) * 0.12f;
+
+                targetScale =
+                    _visualBaseScale *
+                    (1f + bounce);
+
+                break;
+            }
+
+            case SpikeState.Stunned:
+            {
+                float wobble =
+                    Mathf.Sin(
+                        Time.time *
+                        stunnedWobbleFrequency
+                    ) *
+                    stunnedWobbleAngle;
+
+                Quaternion targetRotation =
+                    _stunVisualBaseRotation *
+                    Quaternion.Euler(
+                        wobble * 0.25f,
+                        0f,
+                        wobble
+                    );
+
+                visualRoot.localRotation =
+                    Quaternion.Slerp(
+                        visualRoot.localRotation,
+                        targetRotation,
+                        deltaTime *
+                        visualSmoothSpeed
+                    );
+
+                targetScale =
+                    Vector3.Scale(
+                        _visualBaseScale,
+                        new Vector3(
+                            1.12f,
+                            0.82f,
+                            1.12f
+                        )
+                    );
+
+                break;
+            }
+
+            case SpikeState.Falling:
+            {
+                targetPosition =
+                    _visualBasePosition;
+
+                targetScale =
+                    _visualBaseScale;
+
+                break;
+            }
+        }
+
+        visualRoot.localPosition =
+            Vector3.Lerp(
+                visualRoot.localPosition,
+                targetPosition,
+                deltaTime *
+                visualSmoothSpeed
+            );
+
+        visualRoot.localScale =
+            Vector3.Lerp(
+                visualRoot.localScale,
+                targetScale,
+                deltaTime *
+                visualSmoothSpeed
+            );
+    }
+
+    private void OnDrawGizmosSelected()
+    {
+        if (combatPlatform == null)
+        {
+            Gizmos.color = Color.yellow;
+
+            Gizmos.DrawWireSphere(
+                transform.position,
+                detectionRange
+            );
+        }
+        else
+        {
+            Gizmos.color = Color.yellow;
+
+            Gizmos.DrawWireSphere(
+                transform.position,
+                maximumChargeDistance
+            );
+
+            Gizmos.color = Color.green;
+
+            Gizmos.DrawWireSphere(
+                transform.position,
+                minimumChargeDistance
+            );
+        }
+
+        Transform probe =
+            groundProbe != null
+                ? groundProbe
+                : transform;
+
+        Gizmos.color = Color.green;
+
+        Gizmos.DrawLine(
+            probe.position +
+            Vector3.up * 0.2f,
+            probe.position +
+            Vector3.up * 0.2f +
+            Vector3.down *
+            groundCheckDistance
+        );
+
+        Gizmos.color = Color.red;
+
+        Gizmos.DrawWireSphere(
+            transform.position +
+            transform.forward *
+            wallCheckDistance +
+            Vector3.up * 0.5f,
+            wallCheckRadius
+        );
+
+        if (Application.isPlaying &&
+            currentState ==
+            SpikeState.Charging)
+        {
+            Gizmos.color = Color.cyan;
+
+            Gizmos.DrawLine(
+                transform.position,
+                transform.position +
+                _chargeDirection * 5f
+            );
+        }
+    }
+}

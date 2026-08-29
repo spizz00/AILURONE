@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 93b22fb8be3d91b47ac2129abb81d76e
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 9100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 367232
+  packageName: Shapes FlowPath
+  packageVersion: 1.0
+  assetPath: Assets/Tazlel/Shapes FlowPath/Animations/TunnelCamera.controller
+  uploadId: 922316

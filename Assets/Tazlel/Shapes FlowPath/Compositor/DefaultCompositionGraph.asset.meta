@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b360186a8071e2e4ca392d276062f0ce
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 11400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 367232
+  packageName: Shapes FlowPath
+  packageVersion: 1.0
+  assetPath: Assets/Tazlel/Shapes FlowPath/Compositor/DefaultCompositionGraph.asset
+  uploadId: 922316

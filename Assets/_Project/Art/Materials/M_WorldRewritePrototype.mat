@@ -1,0 +1,60 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!21 &2100000
+Material:
+  serializedVersion: 8
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: M_WorldRewritePrototype
+  m_Shader: {fileID: 4800000, guid: 3d64be034c47082479440009140f645e, type: 3}
+  m_Parent: {fileID: 0}
+  m_ModifiedSerializedProperties: 0
+  m_ValidKeywords: []
+  m_InvalidKeywords: []
+  m_LightmapFlags: 4
+  m_EnableInstancingVariants: 0
+  m_DoubleSidedGI: 0
+  m_CustomRenderQueue: -1
+  stringTagMap: {}
+  disabledShaderPasses: []
+  m_LockedProperties: 
+  m_SavedProperties:
+    serializedVersion: 3
+    m_TexEnvs: []
+    m_Ints: []
+    m_Floats:
+    - _BandFrequency: 0.28
+    - _BandStrength: 0.075
+    - _EdgeIntensity: 0.95
+    - _EdgeWidth: 0.72
+    - _FeatherWidth: 2.4
+    - _FrontierBreakup: 0.48
+    - _FrontierDistortion: 0.72
+    - _LayerFrequency: 0.19
+    - _LayerStrength: 0.018
+    - _NoiseScale: 0.32
+    - _NoiseStrength: 0.028
+    - _OriginalColorRetention: 0.26
+    - _PanelContrast: 0.018
+    - _PanelSize: 1.75
+    - _PanelStagger: 0.25
+    - _RewriteBrightness: 1.04
+    - _RewriteContrast: 1.14
+    - _SeamCoverage: 0.3
+    - _SeamIntensity: 0.015
+    - _SeamWidth: 0.03
+    - _SecondaryBandFrequency: 0.11
+    - _SecondaryBandStrength: 0.045
+    - _TintBlend: 0.56
+    - _WakeBandFrequency: 1.35
+    - _WakeBandStrength: 0.42
+    - _WakeIntensity: 0.46
+    - _WakeWidth: 3.2
+    m_Colors:
+    - _EdgeColor: {r: 0.34, g: 0.91, b: 1, a: 1}
+    - _RewriteTint: {r: 0.62, g: 0.86, b: 0.93, a: 1}
+    - _WakeColor: {r: 0.48, g: 0.94, b: 1, a: 1}
+  m_BuildTextureStacks: []
+  m_AllowLocking: 1

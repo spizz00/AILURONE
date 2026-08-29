@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 313c8ee39522d394d9ede7b4a40600ca
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 112000000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 367232
+  packageName: Shapes FlowPath
+  packageVersion: 1.0
+  assetPath: Assets/Tazlel/Shapes FlowPath/URP/Scene/More Examples/LightingData.asset
+  uploadId: 922316
